@@ -1,0 +1,586 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, Image, ScrollView, ImageBackground, Alert } from 'react-native';
+import { db, collection, onSnapshot, doc, updateDoc, deleteDoc } from '../firebase/firebaseConfig';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import BouncyCheckbox from "react-native-bouncy-checkbox";
+import { Ionicons } from '@expo/vector-icons';
+
+SplashScreen.preventAutoHideAsync();
+
+export function Calendario({ navigation }) {
+  const [eventos, setEventos] = useState([]);
+  const [diasComEventos, setDiasComEventos] = useState([]);
+  const [diasSemana, setDiasSemana] = useState([]);
+  const [mesAtual, setMesAtual] = useState('');
+
+  const [fontsLoaded] = useFonts({
+    'Bochan': require('../assets/fonts/Bochan Serif.ttf'),
+    'Poppins-Regular': require('../assets/fonts/Poppins-Regular.ttf'),
+    'Poppins-SemiBold': require('../assets/fonts/Poppins-SemiBold.ttf'),
+    'Poppins-Light': require('../assets/fonts/Poppins-Light.ttf'),
+    'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
+    'Poppins-LightItalic': require('../assets/fonts/Poppins-LightItalic.ttf'),
+  });
+
+  useEffect(() => {
+    const onLayoutRootView = async () => {
+      if (fontsLoaded) {
+        await SplashScreen.hideAsync();
+      }
+    };
+    onLayoutRootView();
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    const hoje = new Date();
+    const mes = hoje.getMonth(); // Mês atual
+    const ano = hoje.getFullYear();
+
+    // Obtenha o nome do mês atual
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    setMesAtual(meses[mes]);
+
+    const primeiroDiaSemana = new Date(hoje);
+    primeiroDiaSemana.setDate(hoje.getDate() - hoje.getDay());
+
+    const diasDaSemana = [];
+    for (let i = 0; i < 7; i++) {
+      const dia = new Date(primeiroDiaSemana);
+      dia.setDate(primeiroDiaSemana.getDate() + i);
+      diasDaSemana.push(dia);
+    }
+
+    setDiasSemana(diasDaSemana);
+
+    const unsubscribe = onSnapshot(collection(doc(db, 'calendario', 'docID'), 'eventos'), snapshot => {
+      const dadosEventos = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Filtra eventos do mês atual
+      const eventosMesAtual = dadosEventos.filter(evento => {
+        const dataEvento = evento.date.toDate();
+        return dataEvento.getMonth() === mes && dataEvento.getFullYear() === ano;
+      });
+
+      setEventos(eventosMesAtual);
+
+      const diasMarcados = eventosMesAtual.map(evento =>
+        evento.date.toDate().toISOString().split('T')[0] // Formato yyyy-mm-dd
+      );
+      setDiasComEventos(diasMarcados);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const capitalizarPrimeiraLetra = (texto) => {
+    if (!texto) return texto;
+    return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
+  };
+
+  const marcarComoLido = async (eventoId) => {
+    try {
+      await updateDoc(doc(db, 'calendario', 'docID', 'eventos', eventoId), {
+        markedAsRead: true
+      });
+      console.log('Evento marcado como lido com sucesso!');
+    } catch (error) {
+      console.error('Erro ao marcar evento como lido: ', error);
+    }
+  };
+
+  const formatarData = (timestamp) => {
+    const data = timestamp.toDate();
+    const dia = String(data.getDate()).padStart(2, '0');
+    const mes = String(data.getMonth() + 1).padStart(2, '0');
+    const ano = data.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+  };
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
+  return (
+    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.tituloHeader}>Calendário</Text>
+        </View>
+
+        {/* Exibir o mês atual */}
+        <View style={styles.mesContainer}>
+          <Text style={styles.mesAtual}>{mesAtual}</Text>
+        </View>
+
+        <View style={styles.calendario}>
+          <View style={styles.calendarioInterior}>
+            <View style={styles.calendarioBody}>
+              {diasSemana.map((dia, index) => {
+                const dataFormatada = dia.toISOString().split('T')[0];
+                const isDiaComEvento = diasComEventos.includes(dataFormatada);
+
+                const isFirstDay = index === 0 && !isDiaComEvento;
+                const isLastDay = index === diasSemana.length - 1 && !isDiaComEvento;
+
+                return (
+                  <View key={index} style={[
+                    styles.diaContainer,
+                    !isDiaComEvento && styles.diaContainerZIndex,
+                    { margin: 5 }
+                  ]}>
+                    <View
+                      style={[
+                        styles.diaCalendario,
+                        isDiaComEvento
+                          ? styles.diaComEvento
+                          : [
+                            styles.diaSemEvento,
+                            isFirstDay && styles.primeiroDia,
+                            isLastDay && styles.ultimoDia,
+                          ]
+                      ]}
+                    >
+                      <View style={styles.diaContent}>
+                        <Text style={[
+                          styles.diaTexto,
+                          isDiaComEvento && styles.diaTextoComEvento
+                        ]}>
+                          {String(dia.getDate()).padStart(2, '0')}
+                        </Text>
+                        <Text style={[
+                          styles.diaSemanaTexto,
+                          isDiaComEvento && styles.diaSemanaTextoComEvento
+                        ]}>
+                          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dia.getDay()]}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.main}>
+          <View style={styles.tituloEventos}>
+            <TouchableOpacity style={styles.botaoTituloEvento}>
+              <Text style={styles.titulo2}>Eventos</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.flatList, eventos.length === 0 && styles.centralizarConteudo]}>
+            {eventos.length === 0 ? (
+              <View style={styles.centralizarMensagemContainer}>
+                <View style={styles.mensagemContainer}>
+                  <Image style={styles.mensagemImagem} source={require('../assets/noEvents.png')} />
+                  <ImageBackground
+                    source={require('../assets/ballon.png')}
+                    style={styles.mensagemTextoBackground}
+                    resizeMode="cover"
+                  >
+                    <Text style={styles.mensagemTexto}>Olá! Nilus informa! Nenhum evento aqui.</Text>
+                  </ImageBackground>
+                </View>
+              </View>
+            ) : (
+              <FlatList
+                style={styles.flatListContainer}
+                data={eventos}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => {
+                  const eventoEncerrado = item.date.toDate() < new Date();
+                  const isMarkedAsRead = item.markedAsRead;
+
+                  return (
+                    <View style={styles.itemEventoContainer}>
+                      {/* Camada de fundo para evento encerrado */}
+                      {eventoEncerrado && (
+                        <View style={[styles.backgroundEventClosed, { zIndex: -1 }]} />
+                      )}
+
+                      <View style={styles.itemEvento}>
+                        <View style={styles.eventDetails}>
+                          <Text style={styles.tituloDoEvento}>
+                            {capitalizarPrimeiraLetra(item.title)}
+                          </Text>
+                          <Text style={styles.dataEvento}>
+                            {formatarData(item.date)}
+                          </Text>
+                          <Text style={styles.descricaoDoEvento}>
+                            {capitalizarPrimeiraLetra(item.description)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={[styles.itemEventoActions]}>
+                        {eventoEncerrado ? (
+                          <Text style={styles.eventoEncerradoCheck}>Evento encerrado.</Text>
+                        ) : (
+                          <Text style={styles.eventoAndamentoCheck}>Evento em andamento.</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                }}
+                scrollEnabled={false}
+              />
+            )}
+          </View>
+        </View>
+
+        <View style={styles.atividades}>
+          <View style={styles.tituloAtividades}>
+            <TouchableOpacity style={styles.botaoTituloAtividade}>
+              <Text style={styles.titulo3}>Atividades</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F9F9F9",
+    paddingTop: '14%',
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: 'center',
+    paddingStart: '8%',
+    width: 234,
+    height: 60,
+    backgroundColor: '#C90018',
+    borderTopRightRadius: 50,
+    borderBottomRightRadius: 50
+  },
+  containerLogo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tituloHeader: {
+    fontFamily: 'Bochan',
+    fontSize: 24,
+    color: 'white'
+  },
+  titulo: {
+    fontSize: 17.68,
+    alignItems: 'center',
+    alignContent: 'center',
+    justifyContent: 'center',
+    fontFamily: 'Bochan',
+    color: '#fff',
+  },
+  linha: {
+    backgroundColor: 'white',
+    width: 2,
+    height: 33
+  },
+  logoNexus: {
+    width: 171.79,
+    height: 41,
+  },
+  calendarioHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 10,
+  },
+  dia: {
+    alignItems: 'center',
+  },
+  calendario: {
+    backgroundColor: '#fff',
+    borderColor: '#D9D9D9',
+    borderWidth: 1,
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+    padding: 15,
+    width: '90%',
+    justifyContent: 'flex-end',
+    alignSelf: 'flex-end',
+    shadowColor: '#D9D9D9',
+    shadowOffset: { width: 4.14, height: 15 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6.68, // ajustar o valor do shadowRadius
+    elevation: 15, // necessário para Android
+  },
+  calendarioInterior: {
+    alignSelf: 'center',
+    justifyContent: 'center',
+    height: 80,
+    borderRadius: 15,
+  },
+  calendarioBody: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  diaContainerZIndex: {
+    zIndex: -1, // define o zIndex negativo para garantir que fique atrás dos dias com evento
+  },
+  diaComEvento: {
+    backgroundColor: '#F9C3CA',
+    width: 50,
+    height: 87,
+    padding: 11.5,
+    zIndex: 1, // ZIndex maior para trazer os dias com evento para frente
+    borderRadius: 15,
+  },
+  faixaBranca: {
+    backgroundColor: '#fff',
+  },
+  diaSemEvento: {
+    backgroundColor: '#fff',
+    width: 45,
+    height: 70,
+    padding: 5,
+    zIndex: 0,
+  },
+  primeiroDia: {
+    borderTopLeftRadius: 10,  // borda arredondada no topo esquerdo
+    borderBottomLeftRadius: 10, // borda arredondada no inferior esquerdo
+  },
+  ultimoDia: {
+    borderTopRightRadius: 10,   // borda arredondada no topo direito
+    borderBottomRightRadius: 10, // borda arredondada no inferior direito
+  },
+  diaTextoComEvento: {
+    color: '#000', // preto para o texto dos dias com eventos
+  },
+  diaSemanaTextoComEvento: {
+    color: '#000', // preto para o texto dos dias da semana com eventos
+  },
+  diaContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    height: 70,
+    borderRadius: 15,
+  },
+  diaTexto: {
+    fontFamily: 'Poppins-Regular',
+    color: '#000',
+    fontSize: 20,
+  },
+  diaTextoSelecionado: {
+    color: '#fff',
+  },
+  diaTextoSelecionado2: {
+    color: '#B9BCC2',
+  },
+  diaSemanaTexto: {
+    fontFamily: 'Poppins-Regular',
+    color: '#000',
+    fontSize: 11,
+  },
+  diaContent: {
+    alignItems: 'center',
+    paddingTop: 3,
+  },
+  mesAtual: {
+    marginTop: '5%',
+    justifyContent: 'flex-end',
+    alignSelf: 'flex-end',
+    backgroundColor: '#D8273D',
+    fontFamily: 'Bochan',
+    fontSize: 14.8,
+    color: '#fff',
+    paddingLeft: 22,
+    paddingTop: 16,
+    paddingBottom: 10,
+    paddingRight: 22,
+    marginRight: '5%',
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+  },
+  main: {
+    flex: 1,
+    paddingTop: 40,
+    justifyContent: 'flex-start',
+    minHeight: '100%',
+    paddingBottom: 20, // para evitar que os eventos "flutuem" fora da tela
+  },
+  flatList: {
+    borderWidth: 1,
+    borderColor: '#E6E6E6',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    flexGrow: 1, // permite que a lista cresça conforme o conteúdo
+  },
+  flatListContainer: {
+    paddingHorizontal: 35,
+    paddingTop: '8%',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: '#fff',
+    flex: 1, // faz o FlatList crescer e ocupar o espaço restante
+    paddingBottom: 20,
+  },
+  centralizarConteudo: {
+    // justifyContent: 'center',
+    // alignItems: 'center',
+    height: '100%',
+  },
+  itemEventoContainer: {
+    marginBottom: '15%',
+  },
+  itemEvento: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D9D9D9',
+    padding: 17,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    justifyContent: 'space-between',
+    zIndex: 1,
+    // Adicione um espaço mínimo
+    minHeight: 60,
+  },
+  itemEventoActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // Adicione um espaçamento ou padding
+    paddingVertical: 10,
+  },
+  eventDetails: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    marginRight: 10, // Adiciona um espaço entre os detalhes do evento e o botão
+  },
+  titulo2: {
+    fontFamily: 'Poppins-Regular',
+    color: '#fff',
+    fontSize: 17,
+    paddingHorizontal: 25,
+  },
+  botaoTituloEvento: {
+    borderTopLeftRadius: 13,
+    borderTopRightRadius: 13,
+    backgroundColor: '#C90018',
+    height: 45,
+    justifyContent: 'center'
+  },
+  tituloEventos: {
+    marginLeft: '13%',
+    marginRight: '13%',
+    justifyContent: 'space-between',
+    flexDirection: 'row',
+  },
+  tituloDoEvento: {
+    fontFamily: 'Poppins-SemiBold',
+    color: '#000',
+    fontSize: 15,
+  },
+  dataEvento: {
+    fontFamily: 'Poppins-LightItalic',
+    fontSize: 15,
+  },
+  descricaoDoEvento: {
+    fontFamily: 'Poppins-Regular',
+    fontSize: 15,
+  },
+  marcarComoLido: {
+    fontFamily: 'Poppins-Regular',
+  },
+  botaoLido: {
+    padding: 10,
+    borderRadius: 5,
+  },
+  botaoAdicionar: {
+    borderTopLeftRadius: 13,
+    borderTopRightRadius: 13,
+    width: 50,
+    marginTop: 10,
+    padding: 5,
+    height: 40,
+    backgroundColor: '#D33245',
+    alignItems: 'center',
+  },
+  textoBotaoAdicionar: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 35,
+  },
+  eventoEncerrado: {
+    fontFamily: 'Poppins-Bold',
+    marginTop: 10,
+  },
+  centralizarMensagemContainer: {
+    flex: 1, // garante que a view ocupe todo o espaço disponível
+    paddingTop: '15%',
+    alignItems: 'center', // centraliza horizontalmente
+  },
+  mensagemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // justifyContent: 'center',
+    // marginTop: 20,
+  },
+  mensagemTexto: {
+    fontFamily: 'Poppins-Regular',
+    fontSize: 16,
+    color: '#000',
+    paddingLeft: '6%',
+    width: 200,
+    // marginBottom: 10,
+  },
+  mensagemImagem: {
+    width: 121,
+    height: 135.17,
+  },
+  mensagemTextoBackground: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 15,
+    overflow: 'hidden',
+    flexDirection: 'column', // garantir que os itens fiquem alinhados verticalmente
+    textAlign: 'center', // centralizar o texto dentro do background
+  },
+  botaoExcluir: {
+    marginLeft: 10, // para espaçar o botão de outros elementos
+    padding: 10,
+    borderRadius: 5,
+    // backgroundColor: 'transparent', // transparente para mostrar apenas o ícone
+  },
+  eventoEncerradoCheck: {
+    backgroundColor: '#DC4355', // cor de fundo para quando marcado como lido
+    width: 200,
+    padding: 8,
+    paddingLeft: 15,
+    fontFamily: 'Poppins-Bold',
+    color: '#fff',
+    paddingTop: 15,
+    marginTop: -8,
+    zIndex: -1,
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+    position: 'absolute',
+    // borderRadius: 5,
+    alignSelf: 'flex-start', // ajusta o botão à esquerda
+  },
+  eventoAndamentoCheck: {
+    backgroundColor: '#C90018', // cor de fundo para quando marcado como lido
+    width: 220,
+    padding: 8,
+    paddingLeft: 15,
+    fontFamily: 'Poppins-Bold',
+    color: '#fff',
+    paddingTop: 15,
+    marginTop: -8,
+    zIndex: -1,
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+    position: 'absolute',
+    // borderRadius: 5,
+    alignSelf: 'flex-start', // ajusta o botão à esquerda
+  },
+});
